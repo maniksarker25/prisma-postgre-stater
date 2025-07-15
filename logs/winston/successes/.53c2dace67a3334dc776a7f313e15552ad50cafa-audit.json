@@ -1,0 +1,20 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "D:\\Manik Sarker\\Learn\\prisma-stater\\logs\\winston\\successes\\.53c2dace67a3334dc776a7f313e15552ad50cafa-audit.json",
+    "files": [
+        {
+            "date": 1752555009066,
+            "name": "D:\\Manik Sarker\\Learn\\prisma-stater\\logs\\winston\\successes\\phu-2025-15-07-10-success.log",
+            "hash": "a6926fb22780f466881004f87ef130bc2fa86144f2f65623c8e38e68bf31e76a"
+        },
+        {
+            "date": 1752556184999,
+            "name": "D:\\Manik Sarker\\Learn\\prisma-stater\\logs\\winston\\successes\\phu-2025-15-07-11-success.log",
+            "hash": "a243891e6ef0f832316d75b3ff8656f378ff45fbdac0cc95733750a2a4a4ba62"
+        }
+    ],
+    "hashType": "sha256"
+}

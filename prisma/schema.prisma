@@ -16,8 +16,8 @@ model User {
   isBlocked   Boolean     @default(false)
   role        UserRole    @default(USER)
   password    String
-  verifyCode  Int
-  codeExpireIn DateTime
+  verifyCode  Int?
+  codeExpireIn DateTime?
   isVerified  Boolean  @default(false)
   isResetVerified Boolean @default(false)
   appleId String?

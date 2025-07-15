@@ -1,40 +1,57 @@
-import { UserRole } from "@prisma/client";
-import prisma from "../src/app/utils/prisma";
-import bcrypt from "bcrypt";
+import { PrismaClient, UserRole } from "@prisma/client";
+import config from "../src/app/config/index";
+const prisma = new PrismaClient();
+
+const superAdminData = {
+  name: "Mr Admin",
+  email: config.super_admin_email,
+};
 
 const seedSuperAdmin = async () => {
-  try {
-    const isExistsSuperAdmin = await prisma.user.findFirst({
-      where: {
-        role: UserRole.SUPER_ADMIN,
-      },
-    });
-    if (isExistsSuperAdmin) {
-      console.log("Super admin is already exists");
-      return;
-    }
+  const existingSuperAdmin = await prisma.user.findFirst({
+    where: { role: UserRole.SUPER_ADMIN },
+  });
 
-    const hashedPassword = await bcrypt.hash("superadmin", 12);
-    const createSuperAdmin = await prisma.user.create({
-      data: {
-        email: "super@gmail.com",
-        password: hashedPassword,
-        role: UserRole.SUPER_ADMIN,
-        admin: {
-          create: {
-            name: "Super Admin",
-            // email: "super@gmail.com",
-            contactNumber: "017777777",
+  if (existingSuperAdmin) {
+    console.log("Super Admin already exists");
+    return;
+  }
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({
+        data: {
+          email: config.super_admin_email as string,
+          password: config.super_admin_password as string,
+          role: UserRole.SUPER_ADMIN,
+          isVerified: true,
+        },
+      });
+
+      const superAdmin = await tx.superAdmin.create({
+        data: {
+          name: superAdminData.name,
+          email: superAdminData.email as string,
+          user: {
+            connect: { id: user.id },
           },
         },
-      },
+      });
+
+      await tx.user.update({
+        where: { id: user.id },
+        data: { profileId: superAdmin.id },
+      });
+
+      return superAdmin;
     });
-    console.log("super admin created successfully", createSuperAdmin);
+
+    console.log("Super Admin Created Successfully");
+    return result;
   } catch (error) {
-    console.error(error);
-  } finally {
-    await prisma.$disconnect();
+    console.error("Failed to seed Super Admin:", error);
+    throw error;
   }
 };
 
-seedSuperAdmin();
+export default seedSuperAdmin;
