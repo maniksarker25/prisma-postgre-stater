@@ -1,353 +1,217 @@
-import {
-  Admin,
-  Doctor,
-  Patient,
-  Prisma,
-  UserRole,
-  UserStatus,
-} from "@prisma/client";
-import bcrypt, { compareSync } from "bcrypt";
-import { fileUploader } from "../../helpers/fileUploader";
-import { TPaginationOptions } from "../../interface/pagination";
-import { calculatePagination } from "../../helpers/paginationHelper";
-import { userSearchableFields } from "./user.constant";
-import { JwtPayload } from "jsonwebtoken";
-import { symbol } from "zod";
-import { Request } from "express";
-import { IFile } from "../../interface/file";
-import prisma from "../../utils/prisma";
-import AppError from "../../errors/appError";
+import { NormalUser, PrismaClient, UserRole } from "@prisma/client";
 import httpStatus from "http-status";
-const createAdminIntoDB = async (
-  file: any,
-  password: string,
-  adminData: Admin
-) => {
-  // console.log(file, password, adminData);
-  if (file) {
-    const imageName = file.originalname;
-    const uploadImage = await fileUploader.uploadImageToCloudinary(
-      imageName,
-      file?.path
-    );
-    adminData.profilePhoto = uploadImage?.secure_url as string;
-    // console.log(adminData);
-  }
-  const hashedPassword = await bcrypt.hash(password, 12);
-  // make user data ----------------------------------------------------------------
-  const userData = {
-    email: adminData?.email,
-    password: hashedPassword,
-    role: UserRole.ADMIN,
-  };
+import { JwtPayload } from "jsonwebtoken";
+import config from "../../config";
+import AppError from "../../errors/appError";
+import sendEmail from "../../utils/sendEmail";
+import registrationSuccessEmailBody from "../../mailTemplate/registerSuccessEmail";
+import { createToken } from "./user.utils";
 
-  const result = await prisma.$transaction(async (transactionClient) => {
-    await transactionClient.user.create({
-      data: userData,
-    });
-    const createdAdminData = await transactionClient.admin.create({
-      data: adminData,
-    });
-    return createdAdminData;
-  });
-  return result;
+const prisma = new PrismaClient();
+
+const generateVerifyCode = (): number => {
+  return Math.floor(100000 + Math.random() * 900000);
 };
 
-// create doctor into db
-const createDoctorIntoDB = async (
-  file: any,
-  password: string,
-  doctorData: Doctor
-) => {
-  // console.log("doctor", password, doctorData);
-  if (file) {
-    const imageName = file.originalname;
-    const uploadImage = await fileUploader.uploadImageToCloudinary(
-      imageName,
-      file?.path
-    );
-    doctorData.profilePhoto = uploadImage?.secure_url as string;
+const registerUser = async (
+  payload: NormalUser & {
+    password: string;
+    confirmPassword: string;
   }
-  const hashedPassword = await bcrypt.hash(password, 12);
-  // make user data ----------------------------------------------------------------
-  const userData = {
-    email: doctorData?.email,
-    password: hashedPassword,
-    role: UserRole.DOCTOR,
-  };
+) => {
+  const { password, confirmPassword, ...userData } = payload;
 
-  const result = await prisma.$transaction(async (transactionClient) => {
-    await transactionClient.user.create({
-      data: userData,
+  if (password !== confirmPassword) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Password and confirm password don't match");
+  }
+
+  const existingUser = await prisma.user.findUnique({ where: { email: userData.email } });
+  if (existingUser) {
+    throw new AppError(httpStatus.BAD_REQUEST, "This email already exists");
+  }
+
+  const verifyCode = generateVerifyCode();
+  const codeExpireIn = new Date(Date.now() + 5 * 60000);
+
+  return await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        email: userData.email,
+        password,
+        role: UserRole.USER,
+        verifyCode,
+        codeExpireIn,
+        isVerified: false,
+      },
     });
-    const createdDoctorData = await transactionClient.doctor.create({
-      data: doctorData,
+
+    let createdProfile;
+
+    createdProfile = await tx.normalUser.create({
+      data: {
+        ...userData,
+        userId: user.id,
+      },
     });
-    return createdDoctorData;
+
+    await tx.user.update({
+      where: { id: user.id },
+      data: { profileId: createdProfile.id },
+    });
+
+    await sendEmail({
+      email: user.email,
+      subject: "Activate Your Account",
+      html: registrationSuccessEmailBody(createdProfile.name, verifyCode),
+    });
+
+    return createdProfile;
   });
-  return result;
 };
 
-// create patient
-const createPatientIntoDB = async (
-  file: any,
-  password: string,
-  patientData: Patient
-) => {
-  // console.log("Patient", password, patientData);
+const verifyCode = async (email: string, code: number) => {
+  const user = await prisma.user.findUnique({ where: { email } });
 
-  const patient = await prisma.patient.findUnique({
-    where: {
-      email: patientData.email,
-    },
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  if (user.codeExpireIn && user.codeExpireIn < new Date()) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Verify code expired");
+  }
+
+  if (user.verifyCode !== code) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Code doesn't match");
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { email },
+    data: { isVerified: true },
   });
-  if (patient) {
-    throw new AppError(httpStatus.BAD_REQUEST, "User already exists");
-  }
-  if (file) {
-    const imageName = file.originalname;
-    const uploadImage = await fileUploader.uploadImageToCloudinary(
-      imageName,
-      file?.path
-    );
-    patientData.profilePhoto = uploadImage?.secure_url as string;
-  }
-  const hashedPassword = await bcrypt.hash(password, 12);
-  // make user data ----------------------------------------------------------------
-  const userData = {
-    email: patientData?.email,
-    password: hashedPassword,
-    role: UserRole.PATIENT,
+
+  const jwtPayload = {
+    id: updatedUser.id,
+    profileId: updatedUser?.profileId,
+    email: updatedUser.email,
+    role: updatedUser.role,
   };
 
-  const result = await prisma.$transaction(async (transactionClient) => {
-    await transactionClient.user.create({
-      data: userData,
-    });
-    const createdPatientData = await transactionClient.patient.create({
-      data: patientData,
-    });
-    return createdPatientData;
-  });
-  return result;
-};
-
-// get all user from db
-const getAllUserFromDB = async (query: any, options: TPaginationOptions) => {
-  const { searchTerm, ...filterData } = query;
-  // const { limit, page } = options;
-  const { page, limit, skip, sortBy, sortOrder } = calculatePagination(options);
-  // console.log(filterData);
-
-  const andConditions: Prisma.UserWhereInput[] = [];
-  // [
-  //   {
-  //     name: {
-  //       contains: query?.searchTerm,
-  //       mode: "insensitive",
-  //     },
-  //   },
-  //   {
-  //     email: {
-  //       contains: query?.searchTerm,
-  //       mode: "insensitive",
-  //     },
-  //   },
-  // ],
-  if (query?.searchTerm) {
-    andConditions.push({
-      OR: userSearchableFields.map((field) => ({
-        [field]: {
-          contains: query?.searchTerm,
-          mode: "insensitive",
-        },
-      })),
-    });
-  }
-
-  // console.dir(andConditions, { depth: "infinity" });
-
-  // make queries for filter data
-  if (Object.keys(filterData)?.length > 0) {
-    andConditions.push({
-      AND: Object.keys(filterData)?.map((key) => ({
-        [key]: {
-          equals: (filterData as any)[key],
-        },
-      })),
-    });
-  }
-  const whereConditions: Prisma.UserWhereInput =
-    andConditions.length > 0 ? { AND: andConditions } : {};
-  const result = await prisma.user.findMany({
-    where: whereConditions,
-    skip,
-    take: limit,
-    orderBy:
-      options.sortBy && options?.sortOrder
-        ? {
-            [options?.sortBy]: options?.sortOrder,
-          }
-        : {
-            createdAt: "desc",
-          },
-    select: {
-      id: true,
-      email: true,
-      role: true,
-      needPasswordChange: true,
-      status: true,
-      createdAt: true,
-      updatedAt: true,
-      admin: true,
-      patient: true,
-      doctor: true,
-    },
-
-    // we can use include for show admin,doctor,patient profile information
-    // include: {
-    //   admin: true,
-    //   patient: true,
-    //   doctor: true,
-    // },
-  });
-  const total = await prisma.user.count({
-    where: whereConditions,
-  });
   return {
-    meta: {
-      page,
-      limit,
-      total,
-    },
-    data: result,
+    accessToken: createToken(jwtPayload, config.jwt_access_secret!, config.jwt_access_expires_in!),
+    refreshToken: createToken(
+      jwtPayload,
+      config.jwt_refresh_secret!,
+      config.jwt_refresh_expires_in!
+    ),
   };
 };
 
-// change profile status into db
-const changeProfileStatusIntoDB = async (id: string, status: UserRole) => {
-  // console.log("nice", id, status);
-  const userData = await prisma.user.findUniqueOrThrow({
-    where: {
-      id,
-    },
-  });
-  const result = await prisma.user.update({
-    where: {
-      id,
-    },
-    data: status,
-  });
-  return result;
-};
-
-const getMyProfileFromDB = async (user: JwtPayload) => {
-  const userInfo = await prisma.user.findUniqueOrThrow({
-    where: {
-      email: user?.email,
-      status: UserStatus.ACTIVE,
-    },
-    select: {
-      id: true,
-      email: true,
-      needPasswordChange: true,
-      role: true,
-      status: true,
-    },
-  });
-
-  let profileInfo;
-  if (userInfo.role === UserRole.SUPER_ADMIN) {
-    profileInfo = await prisma.admin.findUnique({
-      where: {
-        email: userInfo.email,
-      },
-    });
-  } else if (userInfo.role === UserRole.ADMIN) {
-    profileInfo = await prisma.admin.findUnique({
-      where: {
-        email: userInfo.email,
-      },
-    });
-  } else if (userInfo.role === UserRole.DOCTOR) {
-    profileInfo = await prisma.doctor.findUnique({
-      where: {
-        email: userInfo.email,
-      },
-      include: {
-        doctorSpecialties: true,
-      },
-    });
-  } else if (userInfo.role === UserRole.PATIENT) {
-    profileInfo = await prisma.patient.findUnique({
-      where: {
-        email: userInfo.email,
-      },
-    });
+const resendVerifyCode = async (email: string) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  return { ...userInfo, ...profileInfo };
-};
+  const newCode = generateVerifyCode();
 
-// ;update my profile from db
-const updateMyProfileIntoDB = async (user: JwtPayload, req: Request) => {
-  const userInfo = await prisma.user.findUniqueOrThrow({
-    where: {
-      email: user?.email,
-      status: UserStatus.ACTIVE,
+  const updatedUser = await prisma.user.update({
+    where: { email },
+    data: {
+      verifyCode: newCode,
+      codeExpireIn: new Date(Date.now() + 5 * 60000),
     },
   });
 
-  const file = req.file as IFile;
-  if (file) {
-    const imageName = file?.originalname;
-    const uploadedImage = await fileUploader.uploadImageToCloudinary(
-      imageName,
-      file.path
-    );
-    req.body.profilePhoto = uploadedImage?.secure_url;
-  }
+  await sendEmail({
+    email,
+    subject: "Resend Verification Code",
+    html: registrationSuccessEmailBody("Dear", newCode),
+  });
 
-  let profileInfo;
-  if (userInfo.role === UserRole.SUPER_ADMIN) {
-    profileInfo = await prisma.admin.update({
-      where: {
-        email: userInfo.email,
-      },
-      data: req.body,
-    });
-  } else if (userInfo.role === UserRole.ADMIN) {
-    profileInfo = await prisma.admin.update({
-      where: {
-        email: userInfo.email,
-      },
-      data: req.body,
-    });
-  } else if (userInfo.role === UserRole.DOCTOR) {
-    profileInfo = await prisma.doctor.update({
-      where: {
-        email: userInfo.email,
-      },
-      data: req.body,
-    });
-  } else if (userInfo.role === UserRole.PATIENT) {
-    profileInfo = await prisma.patient.update({
-      where: {
-        email: userInfo.email,
-      },
-      data: req.body,
-    });
-  }
-
-  return { ...profileInfo };
+  return true;
 };
 
-export const userService = {
-  createAdminIntoDB,
-  createDoctorIntoDB,
-  createPatientIntoDB,
-  getAllUserFromDB,
-  changeProfileStatusIntoDB,
-  getMyProfileFromDB,
-  updateMyProfileIntoDB,
+const deleteUserAccount = async (jwtUser: JwtPayload, password: string) => {
+  const user = await prisma.user.findUnique({ where: { id: jwtUser.id } });
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  const passwordMatch = await prisma.user.findFirst({
+    where: {
+      id: jwtUser.id,
+      password: password, // You should hash and compare securely
+    },
+  });
+
+  if (!passwordMatch) {
+    throw new AppError(httpStatus.FORBIDDEN, "Password does not match");
+  }
+
+  await prisma.$transaction([
+    prisma.normalUser.delete({ where: { id: user.profileId! } }),
+    prisma.user.delete({ where: { id: user.id } }),
+  ]);
+
+  return true;
 };
+
+const getMyProfile = async (jwtUser: JwtPayload) => {
+  switch (jwtUser.role) {
+    case UserRole.USER:
+      return prisma.normalUser.findUnique({ where: { id: jwtUser.profileId } });
+    case UserRole.ADMIN:
+      return prisma.admin.findUnique({ where: { id: jwtUser.profileId } });
+    case UserRole.SUPER_ADMIN:
+      return prisma.superAdmin.findUnique({ where: { id: jwtUser.profileId } });
+    default:
+      throw new AppError(httpStatus.BAD_REQUEST, "Invalid role");
+  }
+};
+
+const updateUserProfile = async (jwtUser: JwtPayload, payload: Partial<NormalUser>) => {
+  switch (jwtUser.role) {
+    case UserRole.USER:
+      return prisma.normalUser.update({
+        where: { id: jwtUser.profileId },
+        data: payload,
+      });
+    case UserRole.ADMIN:
+      return prisma.admin.update({
+        where: { id: jwtUser.profileId },
+        data: payload,
+      });
+    case UserRole.SUPER_ADMIN:
+      return prisma.superAdmin.update({
+        where: { id: jwtUser.profileId },
+        data: payload,
+      });
+    default:
+      throw new AppError(httpStatus.BAD_REQUEST, "Invalid role");
+  }
+};
+
+const changeUserStatus = async (id: string) => {
+  const user = await prisma.user.findUnique({ where: { id } });
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  return prisma.user.update({
+    where: { id },
+    data: { isBlocked: !user.isBlocked },
+  });
+};
+
+const userServices = {
+  registerUser,
+  verifyCode,
+  resendVerifyCode,
+  deleteUserAccount,
+  getMyProfile,
+  updateUserProfile,
+  changeUserStatus,
+};
+
+export default userServices;

@@ -1,20 +1,23 @@
-import { UserStatus } from "@prisma/client";
 import generateToken from "../../helpers/generateToken";
 import prisma from "../../utils/prisma";
-import { TLoginUser } from "./auth.interface";
 import bcrypt from "bcrypt";
-import jwt, { JwtPayload } from "jsonwebtoken";
 import config from "../../config";
 import AppError from "../../errors/appError";
 import httpStatus from "http-status";
-import { sendEmail } from "../../utils/sendEmail";
 import verifyToken from "../../helpers/verifyToken";
 import { jwtHelpers } from "../../helpers/jwtHelpers";
+import { TLoginUser } from "./auth.interface";
+import sendEmail from "../../utils/sendEmail";
+import resetPasswordEmailBody from "../../mailTemplate/resetPasswordEmailBody";
+
+const generateVerifyCode = (): number => {
+  return Math.floor(100000 + Math.random() * 900000);
+};
 const loginUserIntoDB = async (payload: TLoginUser) => {
   const user = await prisma.user.findUnique({
     where: {
       email: payload.email,
-      status: UserStatus.ACTIVE,
+      isBlocked: false,
     },
   });
 
@@ -22,10 +25,7 @@ const loginUserIntoDB = async (payload: TLoginUser) => {
     throw new AppError(httpStatus.NOT_FOUND, "This user does not exist");
   }
 
-  const isPasswordMatched = await bcrypt.compare(
-    payload?.password,
-    user?.password
-  );
+  const isPasswordMatched = await bcrypt.compare(payload?.password, user?.password);
 
   if (!isPasswordMatched) {
     throw new AppError(httpStatus.BAD_REQUEST, "Password does not matched");
@@ -50,7 +50,6 @@ const loginUserIntoDB = async (payload: TLoginUser) => {
   return {
     accessToken,
     refreshToken,
-    needPasswordChange: user?.needPasswordChange,
   };
 };
 
@@ -66,7 +65,7 @@ const refreshToken = async (token: string) => {
   const user = await prisma.user.findUnique({
     where: {
       email: decodedData?.email,
-      status: UserStatus.ACTIVE,
+      isBlocked: false,
     },
   });
   const jwtPayload = {
@@ -89,16 +88,13 @@ const changePasswordIntoDB = async (
   const userData = await prisma.user.findUnique({
     where: {
       email: user?.email,
-      status: UserStatus.ACTIVE,
+      isBlocked: false,
     },
   });
   if (!userData) {
     throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
-  const isPasswordMatched = await bcrypt.compare(
-    payload?.currentPassword,
-    userData?.password
-  );
+  const isPasswordMatched = await bcrypt.compare(payload?.currentPassword, userData?.password);
 
   if (!isPasswordMatched) {
     throw new AppError(httpStatus.FORBIDDEN, "Password does not matched");
@@ -110,7 +106,6 @@ const changePasswordIntoDB = async (
     },
     data: {
       password: hashedPassword,
-      needPasswordChange: false,
     },
   });
 
@@ -122,7 +117,7 @@ const forgetPasswordIntoDB = async (email: string) => {
   const isUserExist = await prisma.user.findUnique({
     where: {
       email,
-      status: UserStatus.ACTIVE,
+      isBlocked: false,
     },
   });
 
@@ -130,35 +125,21 @@ const forgetPasswordIntoDB = async (email: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, "User does not exist!");
   }
 
-  const passResetToken = await jwtHelpers.createPasswordResetToken({
-    id: isUserExist.id,
+  const resetCode = generateVerifyCode();
+
+  sendEmail({
+    email: isUserExist.email,
+    subject: "Reset password code",
+    html: resetPasswordEmailBody("Dear", resetCode),
   });
-
-  const resetLink: string =
-    config.reset_password_ui_link +
-    `?id=${isUserExist.id}&token=${passResetToken}`;
-
-  await sendEmail(
-    email,
-    `
-  <div>
-    <p>Dear ${isUserExist.role},</p>
-    <p>Your password reset link: <a href=${resetLink}><button>RESET PASSWORD<button/></a></p>
-    <p>Thank you</p>
-  </div>
-`
-  );
 };
 
 // reset password into db
-const resetPasswordIntoDB = async (
-  payload: { id: string; newPassword: string },
-  token: string
-) => {
+const resetPasswordIntoDB = async (payload: { id: string; newPassword: string }, token: string) => {
   const isUserExist = await prisma.user.findUnique({
     where: {
       id: payload.id,
-      status: UserStatus.ACTIVE,
+      isBlocked: false,
     },
   });
 
@@ -172,10 +153,7 @@ const resetPasswordIntoDB = async (
     throw new AppError(httpStatus.UNAUTHORIZED, "Something went wrong!");
   }
 
-  const password = await bcrypt.hash(
-    payload.newPassword,
-    Number(config.bcrypt_salt_rounds)
-  );
+  const password = await bcrypt.hash(payload.newPassword, Number(config.bcrypt_salt_rounds));
 
   await prisma.user.update({
     where: {

@@ -1,13 +1,12 @@
 import httpStatus from "http-status";
 import catchAsync from "../../utils/catchAsync";
 import sendResponse from "../../utils/sendResponse";
-import { authService } from "./auth.service";
-import AppError from "../../errors/appError";
 import config from "../../config";
+import { authService } from "./auth.service";
 
 const loginUser = catchAsync(async (req, res) => {
   const result = await authService.loginUserIntoDB(req.body);
-  const { refreshToken, accessToken, needPasswordChange } = result;
+  const { refreshToken, accessToken } = result;
 
   // res.cookie("refreshToken", refreshToken, {
   //   secure: false,
@@ -28,7 +27,7 @@ const loginUser = catchAsync(async (req, res) => {
     message: "User login successfully",
     data: {
       accessToken,
-      needPasswordChange,
+      refreshToken,
     },
   });
 });
