@@ -1,4 +1,4 @@
-import { Admin, Prisma, PrismaClient, UserStatus } from "@prisma/client";
+import { Admin, Prisma, PrismaClient } from "@prisma/client";
 import { adminSearchableFields } from "./admin.constant";
 import { calculatePagination } from "../../helpers/paginationHelper";
 import { TAdminFilterRequest } from "./admin.interface";
@@ -6,10 +6,7 @@ import { TPaginationOptions } from "../../interface/pagination";
 
 const prisma = new PrismaClient();
 
-const getAllAdminFromDB = async (
-  query: TAdminFilterRequest,
-  options: TPaginationOptions
-) => {
+const getAllAdminFromDB = async (query: TAdminFilterRequest, options: TPaginationOptions) => {
   const { searchTerm, ...filterData } = query;
   // const { limit, page } = options;
   const { page, limit, skip, sortBy, sortOrder } = calculatePagination(options);
@@ -96,10 +93,7 @@ const getSingleAdminFromDB = async (id: string): Promise<Admin | null> => {
 };
 
 // update admin into db
-const updateAdminIntoDB = async (
-  id: string,
-  payload: Partial<Admin>
-): Promise<Admin | null> => {
+const updateAdminIntoDB = async (id: string, payload: Partial<Admin>): Promise<Admin | null> => {
   await prisma.admin.findUniqueOrThrow({
     where: {
       id,
@@ -161,7 +155,7 @@ const softDeleteAdminFromDB = async (id: string) => {
         email: adminDeletedData?.email,
       },
       data: {
-        status: UserStatus.DELETED,
+        isDeleted: true,
       },
     });
     return adminDeletedData;
