@@ -1,79 +1,84 @@
-import { Gender } from "@prisma/client";
 import { z } from "zod";
 
-const createAdminValidationSchema = z.object({
-  password: z.string({
-    required_error: "Password is required",
-  }),
-  admin: z.object({
-    name: z.string({
-      required_error: "Name is required!",
+// Zod schema for user creation
+export const registerUserValidationSchema = z.object({
+  body: z.object({
+    userData: z.object({
+      firstName: z.string().min(1, "Name is required").max(100),
+      lastName: z.string().min(1, "Name is required").max(100),
+      email: z
+        .string({ invalid_type_error: "Please add a valid email" })
+        .email("Invalid email format"),
     }),
-    email: z.string({
-      required_error: "Email is required!",
-    }),
-    contactNumber: z.string({
-      required_error: "Contact Number is required!",
-    }),
-  }),
-});
-const createDoctorValidationSchema = z.object({
-  password: z.string({
-    required_error: "Password is required",
-  }),
-  doctor: z.object({
-    name: z.string({
-      required_error: "Name is required!",
-    }),
-    email: z.string({
-      required_error: "Email is required!",
-    }),
-    contactNumber: z.string({
-      required_error: "Contact Number is required!",
-    }),
-    address: z.string().optional(),
-    registrationNumber: z.string({
-      required_error: "Reg number is required",
-    }),
-    experience: z.number().optional(),
-    gender: z.enum([Gender.MALE, Gender.FEMALE]),
-    appointmentFee: z.number({
-      required_error: "appointment fee is required",
-    }),
-    qualification: z.string({
-      required_error: "quilification is required",
-    }),
-    currentWorkingPlace: z.string({
-      required_error: "Current working place is required!",
-    }),
-    designation: z.string({
-      required_error: "Designation is required!",
-    }),
+    password: z.string().min(6, "Password must be at least 6 characters"),
+    confirmPassword: z.string().min(6, "Confirm password is required"),
   }),
 });
 
-const createPatientValidationSchema = z.object({
-  password: z.string(),
-  patient: z.object({
-    email: z
-      .string({
-        required_error: "Email is required!",
-      })
-      .email(),
-    name: z.string({
-      required_error: "Name is required!",
-    }),
-    contactNumber: z.string({
-      required_error: "Contact number is required!",
-    }),
-    address: z.string({
-      required_error: "Address is required",
-    }),
+const loginValidationSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: "Email is required" }),
+    password: z.string({ required_error: "Password is required" }),
   }),
 });
 
-export const userValidation = {
-  createAdminValidationSchema,
-  createDoctorValidationSchema,
-  createPatientValidationSchema,
+const changePasswordValidationSchema = z.object({
+  body: z.object({
+    oldPassword: z.string({ required_error: "Old password is required" }),
+    newPassword: z.string({ required_error: "Password is required" }),
+  }),
+});
+
+// refresh token validation schema -----------
+const refreshTokenValidationSchema = z.object({
+  cookies: z.object({
+    refreshToken: z.string({ required_error: "Refresh token is required" }),
+  }),
+});
+
+// forget password validation schema
+const forgetPasswordValidationSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: "User email is required" }),
+  }),
+});
+// reset password validation schema
+const resetPasswordValidationSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: "User email is required" }),
+    newPassword: z.string({ required_error: "New password is required" }),
+  }),
+});
+
+const verifyCodeValidationSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: "Email is required" }),
+    verifyCode: z.number({ required_error: "Phone number is required" }),
+  }),
+});
+
+const resendVerifyCodeSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: "Email is required" }),
+  }),
+});
+
+const deleteUserAccountValidationSchema = z.object({
+  body: z.object({
+    password: z.string({ required_error: "Password is required" }),
+  }),
+});
+
+const userValidations = {
+  registerUserValidationSchema,
+  loginValidationSchema,
+  changePasswordValidationSchema,
+  refreshTokenValidationSchema,
+  forgetPasswordValidationSchema,
+  resetPasswordValidationSchema,
+  verifyCodeValidationSchema,
+  resendVerifyCodeSchema,
+  deleteUserAccountValidationSchema,
 };
+
+export default userValidations;
