@@ -1,101 +1,62 @@
-import { NextFunction, Request, Response } from "express";
-import { userService } from "./user.service";
-import httpStatus from "http-status";
+import { Request, Response } from "express";
 import catchAsync from "../../utils/catchAsync";
-import pick from "../../utils/pick";
+import httpStatus from "http-status";
 import sendResponse from "../../utils/sendResponse";
-import { userFilterableFields } from "./user.constant";
+import { JwtPayload } from "jsonwebtoken";
+import userServices from "./user.service";
 
-const createAdmin = async (req: Request, res: Response, next: NextFunction) => {
-  const { password, admin: adminData } = req.body;
-  try {
-    const result = await userService.createAdminIntoDB(
-      req.file,
-      password,
-      adminData
-    );
-    res.status(httpStatus.CREATED).json({
-      success: true,
-      message: "Admin created successfully",
-      data: result,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: "Something went wrong",
-      error: error,
-    });
-  }
-};
-
-// create doctor
-const createDoctor = catchAsync(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const { password, doctor: doctorData } = req.body;
-
-    const result = await userService.createDoctorIntoDB(
-      req.file,
-      password,
-      doctorData
-    );
-    res.status(httpStatus.CREATED).json({
-      success: true,
-      message: "Doctor created successfully",
-      data: result,
-    });
-  }
-);
-
-// create patient
-const createPatient = catchAsync(
-  async (req: Request, res: Response, next: NextFunction) => {
-    const { password, patient: patientData } = req.body;
-
-    const result = await userService.createPatientIntoDB(
-      req.file,
-      password,
-      patientData
-    );
-    res.status(httpStatus.CREATED).json({
-      success: true,
-      message: "Patient created successfully",
-      data: result,
-    });
-  }
-);
-
-// get all user from db
-const getAllUser = catchAsync(async (req, res) => {
-  const filters = pick(req?.query, userFilterableFields);
-  const options = pick(req.query, ["limit", "page", "sortBy", "sortOrder"]);
-  // console.log("options", options);
-  const result = await userService.getAllUserFromDB(filters, options);
-
+// Register a new user
+const registerUser = catchAsync(async (req: Request, res: Response) => {
+  const result = await userServices.registerUser(req.body);
   sendResponse(res, {
-    statusCode: httpStatus.OK,
+    statusCode: httpStatus.CREATED,
     success: true,
-    message: "User retrieved successfully",
-    meta: result?.meta,
-    data: result?.data,
-  });
-});
-
-// change profile status
-const changeProfileStatus = catchAsync(async (req, res) => {
-  const id = req.params.id;
-  const result = await userService.changeProfileStatusIntoDB(id, req.body);
-  sendResponse(res, {
-    statusCode: httpStatus.OK,
-    success: true,
-    message: "Profile status changed successfully",
+    message: "User registered successfully. Please verify your email.",
     data: result,
   });
 });
 
-// get my profile
-const getMyProfile = catchAsync(async (req, res) => {
-  const user = req.user;
-  const result = await userService.getMyProfileFromDB(user);
+// Verify user account with code
+const verifyUserCode = catchAsync(async (req: Request, res: Response) => {
+  const { email, code } = req.body;
+  const result = await userServices.verifyCode(email, Number(code));
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Account verified successfully",
+    data: result,
+  });
+});
+
+// Resend verification code
+const resendVerifyCode = catchAsync(async (req: Request, res: Response) => {
+  const { email } = req.body;
+  await userServices.resendVerifyCode(email);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Verification code resent successfully",
+    data: null,
+  });
+});
+
+// Delete user account
+const deleteUserAccount = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const { password } = req.body;
+  await userServices.deleteUserAccount(user, password);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Account deleted successfully",
+    data: null,
+  });
+});
+
+// Get my profile
+const getMyProfile = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await userServices.getMyProfile(user);
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
@@ -104,22 +65,36 @@ const getMyProfile = catchAsync(async (req, res) => {
   });
 });
 
-const updateMyProfile = catchAsync(async (req, res) => {
-  const user = req.user;
-  const result = await userService.updateMyProfileIntoDB(user, req);
+// Update my profile
+const updateMyProfile = catchAsync(async (req: Request, res: Response) => {
+  const user = req.user as JwtPayload;
+  const result = await userServices.updateUserProfile(user, req.body);
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Profile data is updated successfully",
+    message: "Profile updated successfully",
     data: result,
   });
 });
+
+// Toggle user status (block/unblock)
+const changeUserStatus = catchAsync(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const result = await userServices.changeUserStatus(id);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "User status updated successfully",
+    data: result,
+  });
+});
+
 export const userController = {
-  createAdmin,
-  createDoctor,
-  createPatient,
-  getAllUser,
-  changeProfileStatus,
+  registerUser,
+  verifyUserCode,
+  resendVerifyCode,
+  deleteUserAccount,
   getMyProfile,
   updateMyProfile,
+  changeUserStatus,
 };
