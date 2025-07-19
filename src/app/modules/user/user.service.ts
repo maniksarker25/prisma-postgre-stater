@@ -21,6 +21,8 @@ const registerUser = async (
 ) => {
   const { password, confirmPassword, ...userData } = payload;
 
+  console.log("paswrd", password, confirmPassword);
+
   if (password !== confirmPassword) {
     throw new AppError(httpStatus.BAD_REQUEST, "Password and confirm password don't match");
   }
