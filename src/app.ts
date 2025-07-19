@@ -14,7 +14,7 @@ app.use(express.json());
 app.use(urlencoded({ extended: true }));
 
 app.get("/", (req: Request, res: Response) => {
-  res.send("Ms health care server");
+  res.send("Prisma stater is running");
 });
 
 app.use("/api/v1", router);

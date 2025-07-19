@@ -39,17 +39,23 @@ const globalErrorHandler: ErrorRequestHandler = (
   let statusCode = 500;
   let message = "Something went wrong !";
   let errorMessages: IGenericErrorMessage[] = [];
+  let errorType;
 
   if (error instanceof Prisma.PrismaClientValidationError) {
+    // const simplifiedError = handleValidationError(error);
+    // statusCode = simplifiedError.statusCode;
+    // message = simplifiedError.message;
+    // errorMessages = simplifiedError.errorMessages;
     const simplifiedError = handleValidationError(error);
     statusCode = simplifiedError.statusCode;
     message = simplifiedError.message;
     errorMessages = simplifiedError.errorMessages;
+    errorType = simplifiedError.errorType;
   } else if (error instanceof ZodError) {
-    const simplifiedError = handleZodError(error);
-    statusCode = simplifiedError.statusCode;
-    message = simplifiedError.message;
-    errorMessages = simplifiedError.errorMessages;
+    // const simplifiedError = handleZodError(error);
+    // statusCode = simplifiedError.statusCode;
+    // message = simplifiedError.message;
+    // errorMessages = simplifiedError.errorMessages;
   } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
     const simplifiedError = handleClientError(error);
     statusCode = simplifiedError.statusCode;
@@ -82,6 +88,7 @@ const globalErrorHandler: ErrorRequestHandler = (
     success: false,
     message,
     errorMessages,
+    errorType,
     stack: config.env !== "production" ? error?.stack : undefined,
   });
 };
