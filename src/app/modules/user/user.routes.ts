@@ -5,7 +5,7 @@ import { userController } from "./user.controller";
 import userValidations from "./user.validation";
 import { UserRole } from "@prisma/client";
 import auth from "../../middlewares/auth";
-import { uploadFile } from "../../../aws/multer-s3-uploader";
+import { uploadFile } from "../../aws/multer-s3-uploader";
 
 const router = Router();
 
